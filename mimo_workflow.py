@@ -541,15 +541,18 @@ async def prepare_verification_page(
     try:
         log.info("Waiting for React app to render...")
         for i in range(30):
-            root_children = await tab.evaluate(
-                "document.getElementById('root') ? document.getElementById('root').children.length : 0",
+            root_info = await tab.evaluate(
+                "JSON.stringify({children: document.getElementById('root')?.children.length || 0, bodyLen: document.body?.innerText?.trim()?.length || 0})",
                 return_by_value=True
             )
-            body_len = await tab.evaluate(
-                "document.body ? document.body.innerText.trim().length : 0",
-                return_by_value=True
-            )
-            log.info("React check %ds: root_children=%s, body_len=%s", i, root_children, body_len)
+            import json as _json
+            if isinstance(root_info, str):
+                info = _json.loads(root_info)
+            else:
+                info = _json.loads(str(root_info))
+            root_children = info.get('children', 0)
+            body_len = info.get('bodyLen', 0)
+            log.info("React check %ds: root_children=%d, body_len=%d", i, root_children, body_len)
             if root_children > 0 or body_len > 50:
                 log.info("React rendered after %ds", i)
                 break
