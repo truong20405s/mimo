@@ -537,17 +537,32 @@ async def prepare_verification_page(
     except Exception as e:
         log.warning("Could not save screenshot: %s", e)
 
-    # Dump page buttons and links for debugging
+    # Dump page content for debugging
     try:
-        buttons = await tab.select_all("button, a, [role='button']", timeout=3)
-        for btn in buttons:
-            text = (btn.text_all or "").strip()
-            if text:
-                tag = btn.attrs.get("tag_name", btn.tag_name if hasattr(btn, 'tag_name') else "?")
-                cls = btn.attrs.get("class", "")
-                log.info("DEBUG ELEMENT: <%s class='%s'> text='%s'", tag, cls[:80], text[:100])
+        page_info = await tab.evaluate("""
+            (() => {
+                const buttons = Array.from(document.querySelectorAll('button, a, [role=\"button\"]'));
+                const texts = buttons.map(b => b.textContent.trim()).filter(t => t);
+                const inputs = Array.from(document.querySelectorAll('input')).map(i => 
+                    `<input name=\"${i.name}\" type=\"${i.type}\" placeholder=\"${i.placeholder}\">`
+                );
+                return JSON.stringify({
+                    url: window.location.href,
+                    title: document.title,
+                    buttons: texts.slice(0, 20),
+                    inputs: inputs.slice(0, 10),
+                    bodyText: document.body ? document.body.innerText.substring(0, 500) : ''
+                });
+            })()
+        """, return_by_value=True)
+        import json
+        info = json.loads(page_info)
+        log.info("DEBUG URL: %s", info.get('url'))
+        log.info("DEBUG buttons: %s", info.get('buttons'))
+        log.info("DEBUG inputs: %s", info.get('inputs'))
+        log.info("DEBUG body: %s", info.get('bodyText', '')[:200])
     except Exception as e:
-        log.warning("Could not dump elements: %s", e)
+        log.warning("Could not dump page: %s", e)
 
     # Dismiss any announcement popup or cookie consent if present
     await click_when_present(tab, ANNOUNCEMENT_CLOSE_BUTTON, "Announcement Close", timeout=2)
