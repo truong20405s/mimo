@@ -530,6 +530,13 @@ async def prepare_verification_page(
     account: str,
     password: str,
 ) -> bool:
+    # Take screenshot to debug current page state
+    try:
+        await tab.save_screenshot("/tmp/xiaomi_page.png", format="png")
+        log.info("Screenshot saved to /tmp/xiaomi_page.png")
+    except Exception as e:
+        log.warning("Could not save screenshot: %s", e)
+
     # Dismiss any announcement popup or cookie consent if present
     await click_when_present(tab, ANNOUNCEMENT_CLOSE_BUTTON, "Announcement Close", timeout=2)
     await click_when_present(tab, COOKIE_ACCEPT_BUTTON, "Cookie Accept", timeout=1)
