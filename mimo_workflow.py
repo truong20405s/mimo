@@ -537,6 +537,23 @@ async def prepare_verification_page(
     except Exception as e:
         log.warning("Could not save screenshot: %s", e)
 
+    # Wait for React app to render
+    try:
+        log.info("Waiting for React app to render...")
+        for i in range(30):
+            body_text = await tab.evaluate(
+                "document.body ? document.body.innerText.substring(0, 100) : ''",
+                return_by_value=True
+            )
+            if body_text and len(body_text.strip()) > 10:
+                log.info("React rendered after %ds: %s", i, body_text[:80])
+                break
+            await asyncio.sleep(1)
+        else:
+            log.warning("React did not render after 30s")
+    except Exception as e:
+        log.warning("Wait error: %s", e)
+
     # Dump page content for debugging
     try:
         page_info = await tab.evaluate("""
