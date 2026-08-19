@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 import shutil
 import time
@@ -10,10 +11,13 @@ from pathlib import Path
 import nodriver as uc
 from nodriver.core.config import find_chrome_executable
 
+log = logging.getLogger("claw.browser")
+
 
 CSS = "css"
 TEXT = "text"
 Locator = tuple[str, str]
+DEFAULT_CLICK_SETTLE_SECONDS = 2.0
 
 
 def error_summary(error: Exception) -> str:
@@ -50,19 +54,36 @@ def find_chromium_binary() -> str:
     return browser_path
 
 
-async def build_browser(headless: bool) -> uc.Browser:
+async def build_browser(
+    headless: bool,
+    proxy: str | None = None,
+) -> uc.Browser:
     browser_path = find_chromium_binary()
-    print(f"Starting nodriver with Chromium: {browser_path} (headless={headless})")
+    proxy_server = proxy.strip() if proxy and proxy.strip() else None
+    log.info(
+        "Starting nodriver with Chromium: %s (headless=%s, proxy=%s)",
+        browser_path,
+        headless,
+        proxy_server or "none",
+    )
+    browser_args = [
+        "--no-sandbox",
+        "--disable-gpu",
+        "--disable-dev-shm-usage",
+        "--window-size=1440,1000",
+        "--disable-notifications",
+        "--disable-popup-blocking",
+    ]
+    if proxy_server:
+        browser_args.append(f"--proxy-server={proxy_server}")
+
     return await uc.start(
         headless=headless,
         browser_executable_path=browser_path,
         sandbox=False,
-        browser_args=[
-            "--window-size=1440,1000",
-            "--disable-notifications",
-            "--disable-popup-blocking",
-        ],
+        browser_args=browser_args,
     )
+
 
 
 async def find_element(
@@ -154,8 +175,9 @@ async def click_when_present(
     locator: Locator,
     element_name: str,
     timeout: float = 3,
+    settle_seconds: float = DEFAULT_CLICK_SETTLE_SECONDS,
 ) -> bool:
-    print(f"Waiting for '{element_name}'...")
+    log.debug("Waiting for '%s'...", element_name)
     deadline = time.monotonic() + timeout
     last_error: Exception | None = None
     while time.monotonic() < deadline:
@@ -163,14 +185,15 @@ async def click_when_present(
             remaining = max(0.5, deadline - time.monotonic())
             element = await find_element(tab, locator, min(1.0, remaining))
             await click_element(element)
-            print(f"Clicked '{element_name}'.")
-            await tab.sleep(1)
+            log.debug("Clicked '%s'.", element_name)
+            if settle_seconds > 0:
+                await tab.sleep(settle_seconds)
             return True
         except Exception as error:
             last_error = error
             await asyncio.sleep(0.25)
     summary = error_summary(last_error) if last_error else "Timed out"
-    print(f"Could not click '{element_name}': {summary}")
+    log.warning("Could not click '%s': %s", element_name, summary)
     return False
 
 
@@ -186,15 +209,19 @@ async def set_reactive_value(element: uc.Element, value: str) -> None:
         f"""
         element => {{
             const value = {encoded_value};
-            const setter = Object.getOwnPropertyDescriptor(
-                Object.getPrototypeOf(element), 'value'
-            ).set;
+            const prototype = Object.getPrototypeOf(element);
+            const setter = Object.getOwnPropertyDescriptor(prototype, 'value')?.set;
+            if (!setter) {{
+                throw new Error('Element does not expose a value setter.');
+            }}
+            element.focus();
             setter.call(element, value);
             element.dispatchEvent(new InputEvent('input', {{
                 bubbles: true,
                 data: value,
                 inputType: 'insertText',
             }}));
+            element.dispatchEvent(new Event('input', {{ bubbles: true }}));
             element.dispatchEvent(new Event('change', {{ bubbles: true }}));
             return element.value;
         }}
@@ -204,20 +231,57 @@ async def set_reactive_value(element: uc.Element, value: str) -> None:
         raise RuntimeError("The page did not accept the requested input value.")
 
 
-async def wait_until_loaded(tab: uc.Tab, timeout: float) -> None:
+async def wait_until_loaded(
+    tab: uc.Tab,
+    timeout: float,
+    expected_url_contains: str | None = None,
+) -> None:
     deadline = time.monotonic() + timeout
+    last_url = ""
+    last_ready_state = ""
     while time.monotonic() < deadline:
         try:
+            current_url = await tab.evaluate("window.location.href", return_by_value=True)
+            if current_url:
+                last_url = current_url
+            if not current_url or current_url in ("about:blank", "chrome://newtab/"):
+                await asyncio.sleep(0.25)
+                continue
+            if current_url.startswith("chrome-error://"):
+                error_details = ""
+                try:
+                    error_details = await tab.evaluate(
+                        "document.body ? document.body.innerText.replace(/\\s+/g, ' ').trim() : ''",
+                        return_by_value=True,
+                    )
+                except Exception:
+                    pass
+                raise RuntimeError(
+                    f"Browser failed to connect (URL: {current_url}). "
+                    f"Network error details: {error_details or 'Connection failed / IP blocked'}. "
+                    "If deploying to cloud (Railway/VPS), Xiaomi may be blocking datacenter IPs. "
+                    "Please set PROXY_SERVER in environment variables."
+                )
+            if expected_url_contains and expected_url_contains not in current_url:
+                await asyncio.sleep(0.25)
+                continue
             ready_state = await tab.evaluate(
                 "document.readyState", return_by_value=True
             )
-            if ready_state == "complete":
+            if ready_state:
+                last_ready_state = ready_state
+            if ready_state in ("interactive", "complete"):
                 await find_element(tab, (CSS, "body"), timeout=1)
                 return
-        except Exception:
-            pass
+        except Exception as err:
+            if "chrome-error://" in str(err) or "Browser failed to connect" in str(err):
+                raise
+            log.debug("wait_until_loaded transient error: %s", err)
         await asyncio.sleep(0.25)
-    raise TimeoutError(f"Page did not finish loading after {timeout:g}s.")
+    raise TimeoutError(
+        f"Page did not finish loading after {timeout:g}s. "
+        f"(last_url='{last_url}', ready_state='{last_ready_state}')"
+    )
 
 
 async def navigate(tab: uc.Tab, url: str, timeout: float = 30) -> None:

@@ -1,54 +1,49 @@
 from __future__ import annotations
 
+import logging
 import os
+import sys
 from pathlib import Path
 
 import nodriver as uc
-from dotenv import load_dotenv
 
-from account_rotation import run_account_session, run_rotation
+from account_rotation import run_rotation
 from app_config import apply_interval_override, load_rotation_config, parse_args
-from mimo_workflow import PROMPT_PATH, load_prompt
+
+log = logging.getLogger("claw")
+
+
+def setup_logging(level: str = "INFO") -> None:
+    fmt = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+    datefmt = "%Y-%m-%d %H:%M:%S"
+    logging.basicConfig(
+        level=getattr(logging, level.upper(), logging.INFO),
+        format=fmt,
+        datefmt=datefmt,
+        handlers=[
+            logging.StreamHandler(sys.stdout),
+            logging.FileHandler("claw.log", encoding="utf-8"),
+        ],
+    )
 
 
 async def async_main() -> None:
-    load_dotenv(Path(__file__).resolve().with_name(".env"), override=False)
     args = parse_args()
+    setup_logging(getattr(args, "log_level", "INFO"))
     if os.name != "nt" and not os.environ.get("DISPLAY"):
         args.headless = True
     config_path = Path(args.config).expanduser().resolve()
     config = load_rotation_config(config_path)
     apply_interval_override(config, args.interval_hours)
-    load_prompt(PROMPT_PATH)
-
-    if args.test_rotation:
-        if args.keep_open and not args.headless:
-            raise ValueError("--keep-open cannot be used with --test-rotation.")
-        await run_rotation(
-            args,
-            config["accounts"],
-            interval_hours=0,
-            max_runs=len(config["accounts"]),
-        )
-        return
-
-    run_once = args.once or bool(args.account.strip())
-    if run_once:
-        first_account = config["accounts"][0]
-        account = args.account.strip() or first_account["account"]
-        password = args.password or first_account["password"]
-        success = await run_account_session(args, account, password)
-        if not success:
-            raise SystemExit(1)
-        return
-
-    if args.keep_open and not args.headless:
-        raise ValueError("--keep-open cannot be used with continuous rotation.")
-
+    log.info(
+        "Starting rotation: %d account(s), interval %.2fh",
+        len(config["accounts"]),
+        config["interval_hours"],
+    )
     try:
         await run_rotation(args, config["accounts"], config["interval_hours"])
     except KeyboardInterrupt:
-        print("\nRotation stopped by user.")
+        log.info("Rotation stopped by user.")
 
 
 def main() -> None:

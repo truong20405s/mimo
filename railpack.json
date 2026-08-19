@@ -4,7 +4,23 @@
   "deploy": {
     "startCommand": "python app.py --headless",
     "aptPackages": [
-      "chromium"
+      "chromium",
+      "chromium-sandbox",
+      "fonts-liberation",
+      "libnss3",
+      "libxss1",
+      "libasound2",
+      "libgbm1",
+      "libatk-bridge2.0-0",
+      "libatk1.0-0",
+      "libcups2",
+      "libdrm2",
+      "libxcomposite1",
+      "libxdamage1",
+      "libxrandr2",
+      "libpango-1.0-0",
+      "libcairo2",
+      "libatspi2.0-0"
     ],
     "variables": {
       "CHROME_BIN": "/usr/bin/chromium",

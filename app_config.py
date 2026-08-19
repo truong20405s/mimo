@@ -3,12 +3,17 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import os
 from pathlib import Path
 from typing import Any
 
 
 STUDIO_URL = "https://aistudio.xiaomimimo.com/"
 DEFAULT_CONFIG_PATH = Path(__file__).resolve().with_name("accounts.json")
+DEFAULT_PROMPT_SOURCE = (
+    "https://drive.google.com/file/d/"
+    "1SXbCW-6bFvVvsq70xtb_rk3thTscc2cP/view?usp=drive_link"
+)
 
 
 def parse_args() -> argparse.Namespace:
@@ -17,17 +22,10 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--url", default=STUDIO_URL, help="Website URL to open.")
     parser.add_argument(
-        "--timeout", type=int, default=30,
+        "--timeout", type=int, default=60,
         help="Maximum seconds to wait for the page to load.",
     )
-    parser.add_argument(
-        "--stay-seconds", type=int, default=20,
-        help="Seconds to keep the browser open before closing.",
-    )
-    parser.add_argument(
-        "--keep-open", action="store_true",
-        help="Leave Chrome open after the script finishes.",
-    )
+
     parser.add_argument(
         "--headless", action="store_true",
         help="Run Chrome without showing a browser window.",
@@ -36,14 +34,7 @@ def parse_args() -> argparse.Namespace:
         "--screenshot", default="",
         help="Optional path to save a screenshot after the page loads.",
     )
-    parser.add_argument(
-        "--account", default="",
-        help="Xiaomi account email, phone, or ID.",
-    )
-    parser.add_argument(
-        "--password", default="",
-        help="Xiaomi account password.",
-    )
+
     parser.add_argument(
         "--otp-timeout", type=int, default=120,
         help="Maximum seconds to wait for the first email and its OTP.",
@@ -53,16 +44,23 @@ def parse_args() -> argparse.Namespace:
         help="JSON file containing the account rotation settings.",
     )
     parser.add_argument(
-        "--once", action="store_true",
-        help="Run one account once instead of continuously rotating accounts.",
+        "--prompt-source",
+        default=DEFAULT_PROMPT_SOURCE,
+        help="Prompt text source. Use a local path or a Google Drive/file URL.",
     )
-    parser.add_argument(
-        "--test-rotation", action="store_true",
-        help="Run every enabled account once with no wait, then stop.",
-    )
+
     parser.add_argument(
         "--interval-hours", type=float, default=None,
         help="Override the rotation interval from the config file.",
+    )
+    parser.add_argument(
+        "--proxy-server", default=None,
+        help="Proxy server URL or comma-separated list (e.g. socks5://host:port,http://host:port).",
+    )
+    parser.add_argument(
+        "--log-level", default="INFO",
+        choices=["DEBUG", "INFO", "WARNING", "ERROR"],
+        help="Logging level.",
     )
     return parser.parse_args()
 
@@ -127,3 +125,29 @@ def apply_interval_override(
     if not math.isfinite(interval_hours) or interval_hours <= 0:
         raise ValueError("--interval-hours must be a finite number above zero.")
     config["interval_hours"] = interval_hours
+
+
+def parse_proxy_pool(proxy_arg: str | None = None) -> list[str]:
+    """Parse proxy list from CLI argument or environment variables."""
+    raw_proxies = (
+        proxy_arg
+        or os.environ.get("PROXY_POOL", "").strip()
+        or os.environ.get("PROXY_SERVERS", "").strip()
+        or os.environ.get("PROXY_SERVER", "").strip()
+        or os.environ.get("HTTP_PROXY", "").strip()
+        or os.environ.get("HTTPS_PROXY", "").strip()
+        or ""
+    )
+    if not raw_proxies:
+        return []
+
+    # Support comma, newline, or semicolon delimited proxy list
+    parts = [
+        item.strip()
+        for chunk in raw_proxies.replace(";", ",").replace("\n", ",").split(",")
+        if (item := chunk.strip())
+    ]
+    return parts
+
+
+
