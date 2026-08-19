@@ -541,16 +541,21 @@ async def prepare_verification_page(
     try:
         log.info("Waiting for React app to render...")
         for i in range(30):
-            body_text = await tab.evaluate(
-                "document.body ? document.body.innerText.substring(0, 100) : ''",
+            root_children = await tab.evaluate(
+                "document.getElementById('root') ? document.getElementById('root').children.length : 0",
                 return_by_value=True
             )
-            if body_text and len(body_text.strip()) > 10:
-                log.info("React rendered after %ds: %s", i, body_text[:80])
+            body_len = await tab.evaluate(
+                "document.body ? document.body.innerText.trim().length : 0",
+                return_by_value=True
+            )
+            log.info("React check %ds: root_children=%s, body_len=%s", i, root_children, body_len)
+            if root_children > 0 or body_len > 50:
+                log.info("React rendered after %ds", i)
                 break
-            await asyncio.sleep(1)
+            await asyncio.sleep(2)
         else:
-            log.warning("React did not render after 30s")
+            log.warning("React did not render after 60s")
     except Exception as e:
         log.warning("Wait error: %s", e)
 
