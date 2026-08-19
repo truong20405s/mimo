@@ -1,0 +1,30 @@
+name: Test Login
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test-login:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install nodriver requests python-dotenv
+
+      - name: Install Chromium
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y chromium-browser
+          echo "CHROME_BIN=$(which chromium-browser)" >> $GITHUB_ENV
+
+      - name: Run login test
+        env:
+          PROXY_POOL: ""
+          PROXY_SERVER: ""
+        run: python test_login.py --headless
