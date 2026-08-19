@@ -139,7 +139,11 @@ def parse_proxy_pool(proxy_arg: str | None = None) -> list[str]:
         or ""
     )
     if not raw_proxies:
-        return []
+        # Default fallback proxies for Railway deployment
+        return [
+            "socks5://45.43.63.37:10808",
+            "socks5://43.160.255.142:7890",
+        ]
 
     # Support comma, newline, or semicolon delimited proxy list
     parts = [
