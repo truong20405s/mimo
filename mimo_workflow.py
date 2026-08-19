@@ -537,6 +537,18 @@ async def prepare_verification_page(
     except Exception as e:
         log.warning("Could not save screenshot: %s", e)
 
+    # Dump page buttons and links for debugging
+    try:
+        buttons = await tab.select_all("button, a, [role='button']", timeout=3)
+        for btn in buttons:
+            text = (btn.text_all or "").strip()
+            if text:
+                tag = btn.attrs.get("tag_name", btn.tag_name if hasattr(btn, 'tag_name') else "?")
+                cls = btn.attrs.get("class", "")
+                log.info("DEBUG ELEMENT: <%s class='%s'> text='%s'", tag, cls[:80], text[:100])
+    except Exception as e:
+        log.warning("Could not dump elements: %s", e)
+
     # Dismiss any announcement popup or cookie consent if present
     await click_when_present(tab, ANNOUNCEMENT_CLOSE_BUTTON, "Announcement Close", timeout=2)
     await click_when_present(tab, COOKIE_ACCEPT_BUTTON, "Cookie Accept", timeout=1)
