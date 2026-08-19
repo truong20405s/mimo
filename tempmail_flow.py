@@ -19,7 +19,7 @@ from nodriver_utils import CSS, Locator, click_element, error_summary, find_elem
 log = logging.getLogger("claw.tempmail")
 
 BASE_URL = "https://tempmail.id.vn/api"
-TEMPMAIL_API_TOKEN = "11759|B4K2XX0L9PUxXNEd4rl9Eq4702wMjJbMyA6dlLz79984c7a4"
+TEMPMAIL_API_TOKEN = "12366|v11lCtF4itxLfSy1UwgpzYUgpeXVKDYhr9DzSMKS0232a24d"
 DEFAULT_DOMAIN = "tempmail.id.vn"
 
 INBOX_MESSAGE_LINKS: Locator = (CSS, "a[href*='/message/']")
